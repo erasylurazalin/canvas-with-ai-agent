@@ -11,6 +11,7 @@ const DEFAULT_AGENT_STATE = {
   lastActions: [],
   error: '',
   conversationHistory: [],
+  isReactiveEnabled: false,
 }
 
 function getCollaborationUrl(port) {
@@ -19,10 +20,22 @@ function getCollaborationUrl(port) {
   return `${protocol}://${host}/yjs`
 }
 
+function createSafeId(prefix) {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return `${prefix}-${crypto.randomUUID()}`
+    } catch {
+      // Fall through to non-crypto fallback for insecure origins.
+    }
+  }
+
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function randomUser() {
   const suffix = Math.floor(Math.random() * 900) + 100
   return {
-    id: `user-${crypto.randomUUID()}`,
+    id: createSafeId('user'),
     name: `User ${String(suffix).slice(-1)}`,
     color: USER_COLORS[Math.floor(Math.random() * USER_COLORS.length)],
   }
@@ -72,6 +85,10 @@ export default function CanvasWrapper({
         conversationHistory: Array.isArray(value.conversationHistory)
           ? value.conversationHistory.slice(-MAX_HISTORY_TURNS)
           : DEFAULT_AGENT_STATE.conversationHistory,
+        isReactiveEnabled:
+          typeof value.isReactiveEnabled === 'boolean'
+            ? value.isReactiveEnabled
+            : DEFAULT_AGENT_STATE.isReactiveEnabled,
       }
     }
 

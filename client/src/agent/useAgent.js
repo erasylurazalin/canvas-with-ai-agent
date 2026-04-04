@@ -5,6 +5,7 @@ const DEFAULT_AGENT_STATE = {
   lastActions: [],
   error: '',
   conversationHistory: [],
+  isReactiveEnabled: false,
 }
 
 function normalizeError(error) {
@@ -30,6 +31,10 @@ function normalizeAgentState(sharedState) {
     conversationHistory: Array.isArray(sharedState.conversationHistory)
       ? sharedState.conversationHistory.slice(-MAX_HISTORY_TURNS)
       : DEFAULT_AGENT_STATE.conversationHistory,
+    isReactiveEnabled:
+      typeof sharedState.isReactiveEnabled === 'boolean'
+        ? sharedState.isReactiveEnabled
+        : DEFAULT_AGENT_STATE.isReactiveEnabled,
   }
 }
 
@@ -50,11 +55,17 @@ export function useAgent({ sharedAgentState, updateSharedAgentState }) {
     lastThought: agentState.lastThought,
     lastActions: agentState.lastActions,
     error: agentState.error,
+    isReactiveEnabled: agentState.isReactiveEnabled,
     setError(error) {
       patchAgentState({ error })
     },
     setStatus(status) {
       patchAgentState({ status })
+    },
+    setReactiveEnabled(nextValue) {
+      const resolvedValue =
+        typeof nextValue === 'function' ? nextValue(agentState.isReactiveEnabled) : nextValue
+      patchAgentState({ isReactiveEnabled: Boolean(resolvedValue) })
     },
     async sendMessage({
       userMessage,

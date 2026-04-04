@@ -44,7 +44,6 @@ export default function AgentPanel({
   const [message, setMessage] = useState('')
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [lastProactiveRunAt, setLastProactiveRunAt] = useState(null)
-  const [isReactiveEnabled, setIsReactiveEnabled] = useState(false)
   const [reactiveCountdownMs, setReactiveCountdownMs] = useState(null)
   const runInFlightRef = useRef(false)
   const isApplyingAgentActionsRef = useRef(false)
@@ -52,10 +51,17 @@ export default function AgentPanel({
   const reactiveIntervalRef = useRef(null)
   const reactiveDeadlineRef = useRef(null)
   const previousShapesRef = useRef(new Map())
-  const { status, lastThought, lastActions, error, sendMessage, setStatus, setError } = useAgent({
-    sharedAgentState,
-    updateSharedAgentState,
-  })
+  const {
+    status,
+    lastThought,
+    lastActions,
+    error,
+    isReactiveEnabled,
+    sendMessage,
+    setStatus,
+    setError,
+    setReactiveEnabled,
+  } = useAgent({ sharedAgentState, updateSharedAgentState })
   const {
     transcript,
     isListening,
@@ -353,7 +359,7 @@ export default function AgentPanel({
                   role="switch"
                   aria-checked={isReactiveEnabled}
                   onClick={() => {
-                    setIsReactiveEnabled((current) => {
+                    setReactiveEnabled((current) => {
                       const next = !current
 
                       if (!next && reactiveTimeoutRef.current) {

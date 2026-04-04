@@ -9,6 +9,7 @@ const DEFAULT_AGENT_STATE = {
   lastActions: [],
   error: '',
   conversationHistory: [],
+  isReactiveEnabled: false,
 }
 
 export default function App() {

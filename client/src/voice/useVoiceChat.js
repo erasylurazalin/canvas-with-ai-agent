@@ -9,8 +9,20 @@ function getVoiceSignalingUrl() {
   return `${protocol}://${host}${VOICE_SIGNALING_PATH}`
 }
 
+function createSafeId(prefix) {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    try {
+      return `${prefix}-${crypto.randomUUID()}`
+    } catch {
+      // Fall through for insecure public origins.
+    }
+  }
+
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 function createPeerId() {
-  return `peer-${crypto.randomUUID()}`
+  return createSafeId('peer')
 }
 
 function upsertParticipant(current, nextParticipant) {
