@@ -634,9 +634,14 @@ function parseAgentResponse(rawText) {
   }
 }
 
-function inferRequestMode(userMessage, selectedShapeIds) {
+function inferRequestMode(userMessage, selectedShapeIds, requestModeHint) {
   const message = typeof userMessage === 'string' ? userMessage.trim() : ''
   const hasSelectedTargets = Array.isArray(selectedShapeIds) && selectedShapeIds.length > 0
+  const hint = typeof requestModeHint === 'string' ? requestModeHint : 'general'
+
+  if (hint === 'reactive_focus') {
+    return 'reactive_focus'
+  }
 
   if (!message) return 'general'
 
@@ -654,7 +659,15 @@ function inferRequestMode(userMessage, selectedShapeIds) {
   return 'general'
 }
 
-function buildUserPrompt({ userMessage, canvasState, requestMode, selectedShapeIds, selectedShapes }) {
+function buildUserPrompt({
+  userMessage,
+  canvasState,
+  requestMode,
+  selectedShapeIds,
+  selectedShapes,
+  recentChangedShapeIds,
+  recentChangedShapes,
+}) {
   const promptLines = [
     'User request:',
     userMessage,
@@ -685,6 +698,17 @@ function buildUserPrompt({ userMessage, canvasState, requestMode, selectedShapeI
     )
   }
 
+  if (Array.isArray(recentChangedShapeIds) && recentChangedShapeIds.length > 0) {
+    promptLines.push(
+      '',
+      'Recently changed shape ids for this turn:',
+      JSON.stringify(recentChangedShapeIds, null, 2),
+      '',
+      'Recently changed shape objects for this turn:',
+      JSON.stringify(recentChangedShapes, null, 2)
+    )
+  }
+
   if (requestMode === 'edit_existing' || requestMode === 'edit_selection') {
     promptLines.push(
       'This request is asking you to edit existing objects, not add new ones.',
@@ -699,6 +723,15 @@ function buildUserPrompt({ userMessage, canvasState, requestMode, selectedShapeI
     promptLines.push(
       'You must treat the selected shapes as the intended targets.',
       'Do not update, move, highlight, or group shapes outside the selected shape ids unless the user explicitly asks to connect them.'
+    )
+  }
+
+  if (requestMode === 'reactive_focus') {
+    promptLines.push(
+      'This is a reactive follow-up turn.',
+      'Focus primarily on the recently changed shapes instead of the whole board.',
+      'Respond with only 1 to 3 actions.',
+      'Prefer connecting, clarifying, grouping, or adding a very small number of adjacent ideas related to those recent changes.'
     )
   }
 
@@ -802,7 +835,39 @@ function getSelectedShapes(canvasState, selectedShapeIds) {
   )
 }
 
-export async function runAgentTurn({ userMessage, canvasState, conversationHistory, selectedShapeIds }) {
+function normalizeRecentChangedShapeIds(recentChangedShapeIds, canvasState) {
+  if (!Array.isArray(recentChangedShapeIds)) return []
+
+  const knownIds = new Set(
+    (Array.isArray(canvasState) ? canvasState : [])
+      .map((shape) => (shape && typeof shape.id === 'string' ? shape.id : null))
+      .filter(Boolean)
+  )
+
+  return recentChangedShapeIds.filter(
+    (id) => typeof id === 'string' && (knownIds.has(id) || knownIds.has(`shape:${id}`))
+  )
+}
+
+function getRecentChangedShapes(canvasState, recentChangedShapeIds) {
+  const changedIdSet = new Set(recentChangedShapeIds)
+
+  return (Array.isArray(canvasState) ? canvasState : []).filter(
+    (shape) =>
+      shape &&
+      typeof shape.id === 'string' &&
+      (changedIdSet.has(shape.id) || changedIdSet.has(shape.id.replace(/^shape:/, '')))
+  )
+}
+
+export async function runAgentTurn({
+  userMessage,
+  canvasState,
+  conversationHistory,
+  selectedShapeIds,
+  recentChangedShapeIds,
+  requestModeHint,
+}) {
   if (!process.env.GROQ_API_KEY) {
     throw new Error('GROQ_API_KEY is not configured.')
   }
@@ -815,15 +880,31 @@ export async function runAgentTurn({ userMessage, canvasState, conversationHisto
     Array.isArray(canvasState) && canvasState.length > 0 ? canvasState : FALLBACK_CANVAS_STATE
   const normalizedSelectedShapeIds = normalizeSelectedShapeIds(selectedShapeIds, effectiveCanvasState)
   const selectedShapes = getSelectedShapes(effectiveCanvasState, normalizedSelectedShapeIds)
+  const normalizedRecentChangedShapeIds = normalizeRecentChangedShapeIds(
+    recentChangedShapeIds,
+    effectiveCanvasState
+  )
+  const recentChangedShapes = getRecentChangedShapes(
+    effectiveCanvasState,
+    normalizedRecentChangedShapeIds
+  )
 
   const client = new OpenAI({
     apiKey: process.env.GROQ_API_KEY,
     baseURL: 'https://api.groq.com/openai/v1',
   })
 
-  const systemPrompt = buildSystemPrompt(effectiveCanvasState, selectedShapes)
+  const systemPrompt = buildSystemPrompt(
+    effectiveCanvasState,
+    selectedShapes,
+    recentChangedShapes
+  )
   const historyMessages = sanitizeHistory(conversationHistory)
-  const requestMode = inferRequestMode(userMessage, normalizedSelectedShapeIds)
+  const requestMode = inferRequestMode(
+    userMessage,
+    normalizedSelectedShapeIds,
+    requestModeHint
+  )
   const baseMessages = [
     ...historyMessages,
     {
@@ -834,6 +915,8 @@ export async function runAgentTurn({ userMessage, canvasState, conversationHisto
         requestMode,
         selectedShapeIds: normalizedSelectedShapeIds,
         selectedShapes,
+        recentChangedShapeIds: normalizedRecentChangedShapeIds,
+        recentChangedShapes,
       }),
     },
   ]

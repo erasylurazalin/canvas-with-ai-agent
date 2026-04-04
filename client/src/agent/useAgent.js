@@ -56,7 +56,13 @@ export function useAgent({ sharedAgentState, updateSharedAgentState }) {
     setStatus(status) {
       patchAgentState({ status })
     },
-    async sendMessage({ userMessage, canvasState = [], selectedShapeIds = [] }) {
+    async sendMessage({
+      userMessage,
+      canvasState = [],
+      selectedShapeIds = [],
+      recentChangedShapeIds = [],
+      requestModeHint = 'general',
+    }) {
       const trimmedMessage = userMessage.trim()
 
       if (!trimmedMessage) {
@@ -81,6 +87,8 @@ export function useAgent({ sharedAgentState, updateSharedAgentState }) {
             canvasState,
             conversationHistory,
             selectedShapeIds,
+            recentChangedShapeIds,
+            requestModeHint,
           }),
         })
         const responseText = await response.text()

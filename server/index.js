@@ -25,6 +25,7 @@ const whisperThreadCount =
   typeof os.availableParallelism === 'function'
     ? Math.max(2, Math.min(os.availableParallelism(), 8))
     : 4
+const clientDistPath = path.resolve('client/dist')
 
 function getAudioExtension(mimeType) {
   if (mimeType.includes('mp4')) return 'm4a'
@@ -181,7 +182,14 @@ app.get('/api/prompt-preview', (_req, res) => {
 })
 
 app.post('/api/agent', async (req, res) => {
-  const { userMessage, canvasState, conversationHistory, selectedShapeIds } = req.body ?? {}
+  const {
+    userMessage,
+    canvasState,
+    conversationHistory,
+    selectedShapeIds,
+    recentChangedShapeIds,
+    requestModeHint,
+  } = req.body ?? {}
 
   try {
     const result = await runAgentTurn({
@@ -189,6 +197,8 @@ app.post('/api/agent', async (req, res) => {
       canvasState,
       conversationHistory,
       selectedShapeIds,
+      recentChangedShapeIds,
+      requestModeHint,
     })
 
     res.json(result)
@@ -291,7 +301,8 @@ app.post(
 )
 
 const httpServer = http.createServer(app)
-const voiceWss = new WebSocketServer({ server: httpServer, path: '/voice' })
+const voiceWss = new WebSocketServer({ noServer: true })
+const yjsWss = new WebSocketServer({ noServer: true })
 
 voiceWss.on('connection', (socket) => {
   socket.voiceRoomId = null
@@ -306,29 +317,56 @@ voiceWss.on('connection', (socket) => {
   })
 })
 
-httpServer.listen(port, () => {
-  console.log(`HTTP server listening on http://localhost:${port}`)
-})
-
-const wsServer = http.createServer()
-const wss = new WebSocketServer({ server: wsServer })
-
-wss.on('connection', (socket, request) => {
+yjsWss.on('connection', (socket, request) => {
   setupWSConnection(socket, request)
 })
 
-wsServer.listen(wsPort, () => {
-  console.log(`Yjs websocket server listening on ws://localhost:${wsPort}`)
+httpServer.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`)
+
+  if (url.pathname === '/voice') {
+    voiceWss.handleUpgrade(request, socket, head, (ws) => {
+      voiceWss.emit('connection', ws, request)
+    })
+    return
+  }
+
+  if (url.pathname.startsWith('/yjs')) {
+    yjsWss.handleUpgrade(request, socket, head, (ws) => {
+      yjsWss.emit('connection', ws, request)
+    })
+    return
+  }
+
+  socket.destroy()
+})
+
+app.use(express.static(clientDistPath))
+
+app.get('*', async (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    next()
+    return
+  }
+
+  try {
+    await fs.access(clientDistPath)
+    res.sendFile(path.join(clientDistPath, 'index.html'))
+  } catch {
+    next()
+  }
+})
+
+httpServer.listen(port, () => {
+  console.log(`HTTP server listening on http://localhost:${port}`)
 })
 
 const shutdown = () => {
   console.log('Shutting down servers...')
   voiceWss.close(() => {
-    wss.close(() => {
-      wsServer.close(() => {
-        httpServer.close(() => {
-          process.exit(0)
-        })
+    yjsWss.close(() => {
+      httpServer.close(() => {
+        process.exit(0)
       })
     })
   })

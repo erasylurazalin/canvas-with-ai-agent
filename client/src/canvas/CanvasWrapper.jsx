@@ -15,8 +15,8 @@ const DEFAULT_AGENT_STATE = {
 
 function getCollaborationUrl(port) {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const host = window.location.hostname || 'localhost'
-  return `${protocol}://${host}:${port}`
+  const host = window.location.host || 'localhost'
+  return `${protocol}://${host}/yjs`
 }
 
 function randomUser() {
@@ -49,7 +49,7 @@ export default function CanvasWrapper({
 
   useEffect(() => {
     const doc = new Y.Doc()
-    const provider = new WebsocketProvider(getCollaborationUrl(1234), roomId, doc)
+    const provider = new WebsocketProvider(getCollaborationUrl(), roomId, doc)
     const yCanvas = doc.getMap('tldraw-document')
     const yAgentState = doc.getMap('agent-state')
 

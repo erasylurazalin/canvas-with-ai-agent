@@ -5,8 +5,8 @@ const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
 
 function getVoiceSignalingUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const host = window.location.hostname || 'localhost'
-  return `${protocol}://${host}:3001${VOICE_SIGNALING_PATH}`
+  const host = window.location.host || 'localhost'
+  return `${protocol}://${host}${VOICE_SIGNALING_PATH}`
 }
 
 function createPeerId() {

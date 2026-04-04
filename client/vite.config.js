@@ -33,6 +33,14 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/voice': {
+        target: 'ws://localhost:3001',
+        ws: true,
+      },
+      '/yjs': {
+        target: 'ws://localhost:3001',
+        ws: true,
+      },
     },
   },
 })
