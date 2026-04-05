@@ -3,6 +3,8 @@ node_modules/
 .env
 .env.*
 !.env.example
+cert.pem
+key.pem
 
 client/dist/
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const VOICE_SIGNALING_PATH = '/voice'
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }]
+const DEFAULT_ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302'] }]
 
 function getVoiceSignalingUrl() {
   const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
@@ -23,6 +23,26 @@ function createSafeId(prefix) {
 
 function createPeerId() {
   return createSafeId('peer')
+}
+
+async function fetchRtcConfig() {
+  try {
+    const response = await fetch('/api/rtc-config')
+    if (!response.ok) throw new Error('RTC config request failed.')
+    const payload = await response.json()
+    return {
+      iceServers:
+        Array.isArray(payload?.iceServers) && payload.iceServers.length > 0
+          ? payload.iceServers
+          : DEFAULT_ICE_SERVERS,
+      hasTurn: Boolean(payload?.hasTurn),
+    }
+  } catch {
+    return {
+      iceServers: DEFAULT_ICE_SERVERS,
+      hasTurn: false,
+    }
+  }
 }
 
 function upsertParticipant(current, nextParticipant) {
@@ -49,6 +69,10 @@ export function useVoiceChat({ roomId, displayName }) {
   const localStreamRef = useRef(null)
   const peerConnectionsRef = useRef(new Map())
   const pendingCandidatesRef = useRef(new Map())
+  const rtcConfigRef = useRef({
+    iceServers: DEFAULT_ICE_SERVERS,
+    hasTurn: false,
+  })
 
   const remoteStreams = useMemo(
     () =>
@@ -126,7 +150,9 @@ export function useVoiceChat({ roomId, displayName }) {
 
       if (existing) return existing
 
-      const peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS })
+      const peerConnection = new RTCPeerConnection({
+        iceServers: rtcConfigRef.current.iceServers,
+      })
       const localStream = localStreamRef.current
 
       if (localStream) {
@@ -163,6 +189,13 @@ export function useVoiceChat({ roomId, displayName }) {
 
       peerConnection.onconnectionstatechange = () => {
         if (['failed', 'disconnected', 'closed'].includes(peerConnection.connectionState)) {
+          if (peerConnection.connectionState === 'failed') {
+            setError(
+              rtcConfigRef.current.hasTurn
+                ? 'Voice connection failed.'
+                : 'Voice chat needs a TURN relay for users on different networks.'
+            )
+          }
           closePeerConnection(targetPeerId)
         }
       }
@@ -194,6 +227,7 @@ export function useVoiceChat({ roomId, displayName }) {
     setError('')
 
     try {
+      rtcConfigRef.current = await fetchRtcConfig()
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,

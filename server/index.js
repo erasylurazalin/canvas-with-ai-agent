@@ -1,8 +1,8 @@
 import dotenv from 'dotenv'
 import express from 'express'
-import http from 'http'
+import https from 'https'
 import { randomUUID } from 'node:crypto'
-import { promises as fs } from 'node:fs'
+import { promises as fs, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
@@ -26,6 +26,39 @@ const whisperThreadCount =
     ? Math.max(2, Math.min(os.availableParallelism(), 8))
     : 4
 const clientDistPath = path.resolve('client/dist')
+const tlsKeyPath = path.resolve('key.pem')
+const tlsCertPath = path.resolve('cert.pem')
+
+function parseIceUrls(value) {
+  if (typeof value !== 'string') return []
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
+
+function buildIceServers() {
+  const stunUrls = parseIceUrls(process.env.RTC_STUN_URLS)
+  const turnUrls = parseIceUrls(process.env.RTC_TURN_URLS)
+  const defaultStunUrls = ['stun:stun.l.google.com:19302']
+  const iceServers = [
+    {
+      urls: stunUrls.length > 0 ? stunUrls : defaultStunUrls,
+    },
+  ]
+
+  if (turnUrls.length > 0) {
+    iceServers.push({
+      urls: turnUrls,
+      username: process.env.RTC_TURN_USERNAME || '',
+      credential: process.env.RTC_TURN_CREDENTIAL || '',
+    })
+  }
+
+  return iceServers
+}
+
+const rtcIceServers = buildIceServers()
 
 function getAudioExtension(mimeType) {
   if (mimeType.includes('mp4')) return 'm4a'
@@ -181,6 +214,17 @@ app.get('/api/prompt-preview', (_req, res) => {
   })
 })
 
+app.get('/api/rtc-config', (_req, res) => {
+  res.json({
+    iceServers: rtcIceServers,
+    hasTurn: rtcIceServers.some((server) =>
+      Array.isArray(server.urls)
+        ? server.urls.some((url) => typeof url === 'string' && url.startsWith('turn:'))
+        : typeof server.urls === 'string' && server.urls.startsWith('turn:')
+    ),
+  })
+})
+
 app.post('/api/agent', async (req, res) => {
   const {
     userMessage,
@@ -300,7 +344,13 @@ app.post(
   }
 )
 
-const httpServer = http.createServer(app)
+const httpsServer = https.createServer(
+  {
+    key: readFileSync(tlsKeyPath),
+    cert: readFileSync(tlsCertPath),
+  },
+  app
+)
 const voiceWss = new WebSocketServer({ noServer: true })
 const yjsWss = new WebSocketServer({ noServer: true })
 
@@ -321,8 +371,8 @@ yjsWss.on('connection', (socket, request) => {
   setupWSConnection(socket, request)
 })
 
-httpServer.on('upgrade', (request, socket, head) => {
-  const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`)
+httpsServer.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url || '/', `https://${request.headers.host || 'localhost'}`)
 
   if (url.pathname === '/voice') {
     voiceWss.handleUpgrade(request, socket, head, (ws) => {
@@ -357,15 +407,15 @@ app.get('*', async (req, res, next) => {
   }
 })
 
-httpServer.listen(port, () => {
-  console.log(`HTTP server listening on http://localhost:${port}`)
+httpsServer.listen(port, () => {
+  console.log(`HTTPS server listening on https://localhost:${port}`)
 })
 
 const shutdown = () => {
   console.log('Shutting down servers...')
   voiceWss.close(() => {
     yjsWss.close(() => {
-      httpServer.close(() => {
+      httpsServer.close(() => {
         process.exit(0)
       })
     })

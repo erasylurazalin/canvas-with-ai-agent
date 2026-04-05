@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { executeAgentActions, serializeCanvas } from '../canvas/agentActions'
 import { useAgent } from './useAgent'
 import { useVoice } from '../voice/useVoice'
-import { useVoiceChat } from '../voice/useVoiceChat'
 
 const PROACTIVE_PROMPT =
   'Observe the current canvas and contribute like an aggressive brainstorming partner, not a passive organizer. Your default job is to add fresh ideas, unexplored opportunities, sharp questions, risks, assumptions, edge cases, target users, features, monetization ideas, or next steps that make the board more interesting and complete. Prefer expanding weak or sparse parts of the canvas with 2 to 5 concrete new nodes and connect them to relevant existing nodes when helpful. Only reorganize or group content if the board is obviously messy or if structure is necessary to make new ideas clearer. Avoid returning an empty action list unless the canvas is already dense, well-structured, and hard to improve.'
@@ -15,23 +14,19 @@ function getStatusLabel(status) {
   return 'Idle'
 }
 
-function RemoteVoiceAudio({ stream }) {
-  const audioRef = useRef(null)
+function slugifyRoomId(roomId) {
+  return roomId.toLowerCase().replace(/[^a-z0-9-]/g, '-')
+}
 
-  useEffect(() => {
-    const audio = audioRef.current
+function getHostedVoiceUrl(roomId) {
+  const configuredUrl = import.meta.env.VITE_VOICE_ROOM_URL || import.meta.env.VITE_DAILY_ROOM_URL
+  if (configuredUrl) {
+    return configuredUrl.includes('{roomId}')
+      ? configuredUrl.replaceAll('{roomId}', encodeURIComponent(roomId))
+      : configuredUrl
+  }
 
-    if (!audio) return undefined
-
-    audio.srcObject = stream
-    audio.play().catch(() => {})
-
-    return () => {
-      audio.srcObject = null
-    }
-  }, [stream])
-
-  return <audio ref={audioRef} autoPlay playsInline />
+  return `https://meet.jit.si/ai-brainstorm-canvas-${slugifyRoomId(roomId)}`
 }
 
 export default function AgentPanel({
@@ -45,6 +40,7 @@ export default function AgentPanel({
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [lastProactiveRunAt, setLastProactiveRunAt] = useState(null)
   const [reactiveCountdownMs, setReactiveCountdownMs] = useState(null)
+  const [voiceRoomStatus, setVoiceRoomStatus] = useState('')
   const runInFlightRef = useRef(false)
   const isApplyingAgentActionsRef = useRef(false)
   const reactiveTimeoutRef = useRef(null)
@@ -77,25 +73,25 @@ export default function AgentPanel({
       setMessage('')
     },
   })
-  const {
-    isSupported: isVoiceChatSupported,
-    isConnecting: isVoiceConnecting,
-    isConnected: isVoiceConnected,
-    isMuted,
-    error: voiceError,
-    participants: voiceParticipants,
-    remoteStreams,
-    joinVoice,
-    leaveVoice,
-    toggleMute,
-  } = useVoiceChat({
-    roomId,
-    displayName,
-  })
   const statusLabel = getStatusLabel(status)
   const isWorking = status === 'thinking' || status === 'placing'
   const reactiveCountdownSeconds =
     reactiveCountdownMs === null ? null : Math.max(0, Math.ceil(reactiveCountdownMs / 1000))
+  const hostedVoiceUrl = getHostedVoiceUrl(roomId)
+
+  async function copyVoiceLink() {
+    try {
+      await navigator.clipboard.writeText(hostedVoiceUrl)
+      setVoiceRoomStatus('Voice room link copied.')
+    } catch {
+      setVoiceRoomStatus(hostedVoiceUrl)
+    }
+  }
+
+  function openVoiceRoom() {
+    window.open(hostedVoiceUrl, '_blank', 'noopener,noreferrer')
+    setVoiceRoomStatus('Voice room opened in a new tab.')
+  }
 
   function snapshotShape(shape) {
     return {
@@ -414,37 +410,29 @@ export default function AgentPanel({
                   Voice Chat
                 </p>
                 <p className="mt-1 text-sm text-stone-200">
-                  {isVoiceConnected
-                    ? `${voiceParticipants.length + 1} in voice`
-                    : isVoiceConnecting
-                      ? 'Connecting to voice...'
-                      : 'Audio room offline'}
+                  Hosted voice room for demo calls
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={isVoiceConnected ? leaveVoice : joinVoice}
-                  disabled={!isVoiceChatSupported || isVoiceConnecting}
+                  onClick={openVoiceRoom}
                   className="rounded-full bg-sky-400 px-3 py-1 text-xs text-stone-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-stone-700 disabled:text-stone-400"
                 >
-                  {isVoiceConnected ? 'Leave Voice' : 'Join Voice'}
+                  Open Voice Room
                 </button>
                 <button
                   type="button"
-                  onClick={toggleMute}
-                  disabled={!isVoiceConnected}
+                  onClick={copyVoiceLink}
                   className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-300 transition hover:border-white/20 hover:text-stone-100 disabled:cursor-not-allowed disabled:text-stone-500"
                 >
-                  {isMuted ? 'Unmute' : 'Mute'}
+                  Copy Link
                 </button>
               </div>
             </div>
             <p className="mt-2 text-xs text-stone-500">
-              {voiceError ||
-                (isVoiceChatSupported
-                  ? voiceParticipants.map((participant) => participant.name).join(', ') || 'No other listeners yet.'
-                  : 'WebRTC voice is not supported in this browser.')}
+              {voiceRoomStatus ||
+                'Opens a hosted room in a separate tab. Set VITE_DAILY_ROOM_URL or VITE_VOICE_ROOM_URL to use your own room instead of the default Jitsi fallback.'}
             </p>
           </div>
 
@@ -500,12 +488,6 @@ export default function AgentPanel({
           </form>
         </>
       ) : null}
-
-      <div className="hidden">
-        {remoteStreams.map((stream) => (
-          <RemoteVoiceAudio key={stream.peerId} stream={stream.stream} />
-        ))}
-      </div>
     </div>
   )
 }
