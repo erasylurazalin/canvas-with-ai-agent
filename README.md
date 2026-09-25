@@ -5,7 +5,8 @@ in a sidebar chat. You ask it something, by text or by voice, and it adds sticky
 notes, groups and connects ideas, and generates images right on the canvas, where
 everyone connected sees it happen.
 
-Built by a team of two at a hackathon in spring 2026. It made the final.
+Built by a team of two at HackNU 26, the Nazarbayev University hackathon. It made the
+final.
 
 ## What's in it
 
