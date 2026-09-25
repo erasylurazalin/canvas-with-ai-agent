@@ -1,89 +1,59 @@
 # AI Brainstorm Canvas
 
-AI Brainstorm Canvas is a real-time collaborative whiteboard where an AI agent participates directly on the canvas instead of sitting in a sidebar chat.
+A shared whiteboard where an AI agent works on the board itself instead of sitting
+in a sidebar chat. You ask it something, by text or by voice, and it adds sticky
+notes, groups and connects ideas, and generates images right on the canvas, where
+everyone connected sees it happen.
 
-Users can brainstorm together, talk over built-in voice chat, speak prompts to the AI, and watch the agent create, move, group, annotate, and visualize ideas on the board.
+Built by a team of two at a hackathon in spring 2026. It made the final.
 
-## Features
+## What's in it
 
-- Real-time multiplayer canvas with `tldraw` + `Yjs`
-- AI agent that acts directly on the canvas
-- Shared agent state across all connected users
-- Text prompts and speech-to-AI input
-- Built-in user voice chat
-- Image generation on the canvas
-- Reactive AI mode with shared on/off state
+- Real-time multiplayer canvas: tldraw, synced over Yjs and a WebSocket server
+- The agent: an LLM on Groq (`openai/gpt-oss-20b`) that returns canvas actions
+  (create, move, group, connect), which the client applies to the shared board
+- Speech to text runs on the server with whisper.cpp (`tiny.en`), not a cloud
+  API
+- Image generation through the Higgsfield API
+- Voice chat between users over WebRTC, or a link to a hosted room
 
-## Tech Stack
+React, Vite and Tailwind on the front, Node and Express on the back.
 
-### Frontend
+## Running it
 
-- React + Vite
-- tldraw
-- Yjs + y-websocket
-- TailwindCSS
-
-### Backend
-
-- Node.js + Express
-- Groq API for the brainstorming agent
-- Local `whisper.cpp` for speech-to-text
-- Higgsfield API for image generation
-
-## Project Structure
-
-```text
-client/   React frontend
-server/   Express server, agent pipeline, APIs
-vendor/   Local whisper.cpp dependency
-```
-
-## Running Locally
-
-Install dependencies:
+Needs Node, ffmpeg, and a Groq API key. Image generation needs a Higgsfield key.
 
 ```bash
 npm install
+cp .env.example .env          # then fill in the keys
+
+# whisper.cpp, for speech to text
+git clone https://github.com/ggml-org/whisper.cpp vendor/whisper.cpp
+cd vendor/whisper.cpp
+cmake -B build && cmake --build build -j --config Release
+sh ./models/download-ggml-model.sh tiny.en
+cd ../..
+
+npm run dev                   # client on http://127.0.0.1:5173
 ```
 
-Run the development setup:
-
-```bash
-npm run dev
-```
-
-Run the production-style app:
+The server runs over HTTPS, because browsers only allow microphone access on a
+secure origin. For a production-style run with a throwaway self-signed certificate:
 
 ```bash
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 1 -nodes -subj "/CN=localhost"
 npm run build
-npm start
+npm start                     # https://localhost:3001
 ```
 
-The app will be available at:
+Other devices on the network have to accept the certificate once.
 
-```text
-https://localhost:3001
-```
+Environment variables the server reads: `GROQ_API_KEY`, `HIGGSFIELD_API_KEY`,
+`HIGGSFIELD_API_SECRET`, `HIGGSFIELD_MODEL_ID`, `PORT` (3001), `WS_PORT` (1234), and
+optionally `RTC_STUN_URLS` and `RTC_TURN_*` for voice chat across networks.
+`VITE_VOICE_ROOM_URL` points the voice button at a hosted room instead.
 
-For remote devices in a demo setting, each browser needs to accept the self-signed certificate once via `Advanced` -> `Proceed anyway`.
+## Known limitations
 
-## Environment Variables
-
-Create a `.env` file in the project root and configure the required keys:
-
-```env
-GROQ_API_KEY=your_key_here
-HIGGSFIELD_API_KEY=your_key_here
-HIGGSFIELD_API_SECRET=your_secret_here
-HIGGSFIELD_MODEL_ID=bytedance/seedream/v4/text-to-image
-PORT=3001
-VITE_VOICE_ROOM_URL=https://your-subdomain.daily.co/{roomId}
-```
-
-## Notes
-
-- Speech-to-text runs locally through `whisper.cpp`, so the host machine also needs `ffmpeg`.
-- Collaboration, agent requests, transcription, and voice signaling are all served from the same Node server in production mode.
-- For demos, the in-app voice button can open a hosted room link instead of using browser-to-browser WebRTC. Set `VITE_VOICE_ROOM_URL` to a Daily room URL like `https://your-subdomain.daily.co/{roomId}`. If unset, the UI falls back to a shared Jitsi room URL.
-- Conversation memory is intentionally short and only keeps the most recent context.
+- Hackathon code: no test suite, and the agent keeps only short conversation memory.
+- Everything runs on one Node server. Fine for a demo, not built to scale.
